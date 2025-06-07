@@ -71,7 +71,7 @@ for upd in ('sync', 'async'):
 # -------------------------------------------
 df = pd.DataFrame(records,
                   columns=['phase', 'k', 'noise', 'update', 'similarity', 'accuracy'])
-df.to_csv('results/all_results-tagged.csv', index=False)
+df.to_csv('results/all_results.csv', index=False)
 
 
 # -------------------------------------------
