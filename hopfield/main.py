@@ -1,12 +1,11 @@
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
 from patterns import Patterns
 from hopfield import Hopfield
 
 PATTERNS = Patterns.PATTERNS
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from tqdm import tqdm
 
 
 def sweep_noise(patterns, noise_list, trials=300, upd='sync'):
@@ -18,7 +17,7 @@ def sweep_noise(patterns, noise_list, trials=300, upd='sync'):
     trials : int                 # 各ノイズレベルでの試行回数
     upd : str                    # 'sync' or 'async' 更新方式
     ----------------
-    @return : list[tuple]  # 各試行の結果 (k, noise, upd, sim_mean, acc_mean)
+    @return : list[tuple]  # 各試行の結果 (phase, k, noise, upd, sim_mean, acc_mean)
     ----------------
     """
     hop = Hopfield(patterns, sync=(upd == 'sync'))
@@ -27,12 +26,13 @@ def sweep_noise(patterns, noise_list, trials=300, upd='sync'):
         sim_sum, acc_sum = 0.0, 0
         for _ in range(trials):
             idx = np.random.randint(len(patterns))
-            tgt = hop.Pmat[idx]
+            tgt = hop.P[idx]
             noisy = hop.add_noise(tgt, noise)
             out = hop.recall(noisy)
             sim_sum += hop.similarity(out, tgt)
             acc_sum += hop.accuracy(out, tgt)
-        rows.append((len(patterns), noise, upd,
+        # フェーズは呼び出し側で付与するので、ここでは phase="" のまま返す
+        rows.append((None, len(patterns), noise, upd,
                      sim_sum/trials, acc_sum/trials))
     return rows
 
@@ -43,14 +43,18 @@ def sweep_noise(patterns, noise_list, trials=300, upd='sync'):
 noise_A = np.arange(0.05, 0.25, 0.05)
 records = []
 for k in tqdm(range(1, 7), desc='ExpA k=1..6'):
-    records += sweep_noise(PATTERNS[:k], noise_A, trials=300, upd='sync')
+    base = sweep_noise(PATTERNS[:k], noise_A, trials=300, upd='sync')
+    records += [('ExpA',) + row[1:] for row in base]
+
 
 # -------------------------------------------
 # 実験 B：k=2,4 で noise 0–100%
 # -------------------------------------------
 noise_B = np.arange(0.0, 1.05, 0.05)
 for k in (2, 4):
-    records += sweep_noise(PATTERNS[:k], noise_B, trials=400, upd='sync')
+    base = sweep_noise(PATTERNS[:k], noise_B, trials=400, upd='sync')
+    records += [('ExpB',) + row[1:] for row in base]
+
 
 # -------------------------------------------
 # 実験 C：同期 vs 非同期の差
@@ -58,14 +62,17 @@ for k in (2, 4):
 # -------------------------------------------
 noise_C = np.arange(0.0, 0.55, 0.05)
 for upd in ('sync', 'async'):
-    records += sweep_noise(PATTERNS[:4], noise_C, trials=400, upd=upd)
+    base = sweep_noise(PATTERNS[:4], noise_C, trials=400, upd=upd)
+    records += [('ExpC',) + row[1:] for row in base]
+
 
 # -------------------------------------------
 # すべて DataFrame に
 # -------------------------------------------
 df = pd.DataFrame(records,
-                  columns=['k', 'noise', 'update', 'similarity', 'accuracy'])
-df.to_csv('results/all_results.csv', index=False)
+                  columns=['phase', 'k', 'noise', 'update', 'similarity', 'accuracy'])
+df.to_csv('results/all_results-tagged.csv', index=False)
+
 
 # -------------------------------------------
 # 可視化ユーティリティ
@@ -74,6 +81,7 @@ df.to_csv('results/all_results.csv', index=False)
 def plot(dfsub, x, y, hue, title, fname):
     plt.figure()
     for label, g in dfsub.groupby(hue):
+        g = g.sort_values(x)  # x 軸（noise）で必ずソート
         plt.plot(g[x]*100, g[y], marker='o', label=str(label))
     plt.xlabel('Noise (%)')
     plt.ylabel(y)
@@ -85,25 +93,40 @@ def plot(dfsub, x, y, hue, title, fname):
     plt.close()
 
 
+# -------------------------------------------
 # グラフ1：ExpA k=1..6
+# -------------------------------------------
+dfA = df[df['phase'] == 'ExpA']
 for metric in ('similarity', 'accuracy'):
-    plot(df.query('noise<=0.2'), 'noise', metric, 'k',
+    plot(dfA.query('noise<=0.2'),
+         'noise', metric, 'k',
          f'ExpA {metric}', f'expA_{metric}.png')
 
+
+# -------------------------------------------
 # グラフ2：ExpB k=2
+# -------------------------------------------
+dfB = df[df['phase'] == 'ExpB']
 for metric in ('similarity', 'accuracy'):
-    sub = df.query('k==2')
-    plot(sub, 'noise', metric, 'k',
-         f'ExpB k=2 {metric}', f'expB_k2_{metric}.png')
+    plot(dfB.query('k==2'),
+         'noise', metric, 'k',
+         f'ExpB k=2 {metric}', f'expb_k2_{metric}.png')
 
+
+# -------------------------------------------
 # グラフ3：ExpB k=4
+# -------------------------------------------
 for metric in ('similarity', 'accuracy'):
-    sub = df.query('k==4')
-    plot(sub, 'noise', metric, 'k',
-         f'ExpB k=4 {metric}', f'expB_k4_{metric}.png')
+    plot(dfB.query('k==4'),
+         'noise', metric, 'k',
+         f'ExpB k=4 {metric}', f'expb_k4_{metric}.png')
 
-# グラフ4：同期 vs 非同期 比較 (k=4)
+
+# -------------------------------------------
+# グラフ4：ExpC (sync vs async, k=4)
+# -------------------------------------------
+dfC = df[df['phase'] == 'ExpC']
 for metric in ('similarity', 'accuracy'):
-    sub = df.query('k==4 & noise<=0.5')
-    plot(sub, 'noise', metric, 'update',
+    plot(dfC.query('k==4 & noise<=0.5'),
+         'noise', metric, 'update',
          f'Sync vs Async (k=4) {metric}', f'sync_async_{metric}.png')
