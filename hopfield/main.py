@@ -40,19 +40,19 @@ def sweep_noise(patterns, noise_list, trials=300, upd='sync'):
 # -------------------------------------------
 # 実験 A：k=1..6, noise 5–20%
 # -------------------------------------------
-noise_A = np.arange(0.05, 0.25, 0.05)
+fixed_noise = 0.10  # ノイズ 10% に固定
 records = []
-for k in tqdm(range(1, 7), desc='ExpA k=1..6'):
-    base = sweep_noise(PATTERNS[:k], noise_A, trials=300, upd='sync')
-    records += [('ExpA',) + row[1:] for row in base]
-
+for k in tqdm(range(1, 7), desc='ExpA k=1..6 (noise=10%)'):
+    # パターン数 k で一度だけ sweep_noise を呼び出し
+    base = sweep_noise(PATTERNS[:k], [fixed_noise], trials=300, upd='async')[0]
+    records += [('ExpA',) + base[1:]]
 
 # -------------------------------------------
 # 実験 B：k=2,4 で noise 0–100%
 # -------------------------------------------
 noise_B = np.arange(0.0, 1.05, 0.05)
 for k in (2, 4):
-    base = sweep_noise(PATTERNS[:k], noise_B, trials=400, upd='sync')
+    base = sweep_noise(PATTERNS[:k], noise_B, trials=400, upd='async')
     records += [('ExpB',) + row[1:] for row in base]
 
 
@@ -96,11 +96,19 @@ def plot(dfsub, x, y, hue, title, fname):
 # -------------------------------------------
 # グラフ1：ExpA k=1..6
 # -------------------------------------------
-dfA = df[df['phase'] == 'ExpA']
+dfA = df[df['phase']=='ExpA']
 for metric in ('similarity', 'accuracy'):
-    plot(dfA.query('noise<=0.2'),
-         'noise', metric, 'k',
-         f'ExpA {metric}', f'expA_{metric}.png')
+    # x 軸を noise→k に変更
+    plt.figure()
+    g = dfA.sort_values('k')
+    plt.plot(g['k'], g[metric], marker='o')
+    plt.xlabel('Number of patterns (k)')
+    plt.ylabel(metric)
+    plt.title(f'ExpA ({metric}), noise={int(fixed_noise*100)}%')
+    plt.xticks(range(1,7))
+    plt.grid(ls='--', alpha=.4)
+    plt.savefig(f'results/expA_k_vs_{metric}.png', dpi=150)
+    plt.close()
 
 
 # -------------------------------------------
